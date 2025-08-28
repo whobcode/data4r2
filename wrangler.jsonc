@@ -1,5 +1,5 @@
 /**
- * For more details on how to configure Wrangler, refer to:
+ /* For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
@@ -14,21 +14,23 @@
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
 	 */
-	// "placement": { "mode": "smart" }
+	"placement": {
+		"mode": "smart"
+	},
 	/**
-	 * Bindings
+	/ * Bindings
 	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
+	/ * databases, object storage, AI inference, real-time communication and more.
 	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
+	/ */
 	/**
-	 * Environment Variables
+	/ * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	// "vars": { "MY_VARIABLE": "production_value" }
 	/**
 	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
+	 /* https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
 	/**
 	 * Static Assets
@@ -36,21 +38,29 @@
 	 */
 	// "assets": { "directory": "./public/", "binding": "ASSETS" }
 	/**
-	 * Service Bindings (communicate between multiple Workers)
+	/* Service Bindings (communicate between multiple Workers)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
 	 */
 	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
 	"queues": {
 		"consumers": [
 			{
-				"queue": "my-queue"
+				"queue": "hf-transfer-queue",
+				"max_batch_size": 5,
+				"max_batch_timeout": 30
 			}
 		],
 		"producers": [
 			{
 				"binding": "MY_QUEUE",
-				"queue": "my-queue"
+				"queue": "hf-transfer-queue"
 			}
 		]
-	}
+	},
+	"r2_buckets": [
+		{
+			"bucket_name": "data4r2",
+			"binding": "data4r2"
+		}
+	]
 }

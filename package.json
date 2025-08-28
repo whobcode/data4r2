@@ -6,10 +6,16 @@
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"sync": "tsx clients/advanced-clients.ts",
+		"synce:squad": "npm run sync -- squad dataset",
+		"sync:bert": "npm run sync -- bert-base-uncased model"
 	},
 	"devDependencies": {
 		"typescript": "^5.5.2",
 		"wrangler": "^4.33.1"
+	},
+	"dependencies": {
+		"@huggingface/hub": "^2.5.1"
 	}
 }
