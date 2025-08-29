@@ -151,12 +151,12 @@ export default {
       const job = message.body;
       
       try {
-        console.log(`🔄 Processing transfer job ${job.job_id}: ${job.hf_url}`);
+        console.log(`Processing transfer job ${job.job_id}: ${job.hf_url}`);
 
         // Fetch from HuggingFace
         const hfResponse = await fetch(job.hf_url);
         if (!hfResponse.ok) {
-          console.error(`❌ Job ${job.job_id} failed: HF returned ${hfResponse.status}`);
+          console.error(` Job ${job.job_id} failed: HF returned ${hfResponse.status}`);
           message.retry(); // Retry the job
           continue;
         }
@@ -173,19 +173,19 @@ export default {
           }
         });
 
-        console.log(`✅ Job ${job.job_id} completed: ${job.r2_path} (${hfResponse.headers.get("content-length") || "unknown"} bytes)`);
+        console.log(` Job ${job.job_id} completed: ${job.r2_path} (${hfResponse.headers.get("content-length") || "unknown"} bytes)`);
         
         // Acknowledge successful processing
         message.ack();
 
       } catch (error) {
-        console.error(`❌ Job ${job.job_id} error:`, error);
+        console.error(` Job ${job.job_id} error:`, error);
         
         // Retry logic: retry up to 3 times, then give up
         if (message.attempts < 3) {
           message.retry();
         } else {
-          console.error(`💀 Job ${job.job_id} failed permanently after 3 attempts`);
+          console.error(`Job ${job.job_id} failed permanently after 3 attempts`);
           message.ack(); // Remove from queue to prevent infinite retries
         }
       }

@@ -1,5 +1,5 @@
 import { listFiles } from "@huggingface/hub";
-import { HuggingFaceToR2Client, TransferResponse } from "./basic-client.ts";
+import { HuggingFaceToR2Client, TransferResponse } from "./basic-clients.ts";
 
 interface BulkResult {
   file: string;
@@ -62,7 +62,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const workerUrl = process.env.WORKER_URL || "https://data4r2.<your-account>.workers.dev";
+  const workerUrl = process.env.WORKER_URL;
   const client = new HFToR2SyncClient(workerUrl);
 
   client.syncRepo(repoId, repoType).then((results) => {

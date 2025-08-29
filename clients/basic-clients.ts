@@ -7,7 +7,7 @@ export class HuggingFaceToR2Client {
   private workerUrl: string;
 
   constructor(workerUrl: string) {
-    if (!workerUrl || workerUrl.includes("<your-account>")) {
+    if (!workerUrl) {
       console.error("❌ Invalid or missing WORKER_URL. Please set it as an environment variable.");
       process.exit(1);
     }

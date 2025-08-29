@@ -62,9 +62,8 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const workerUrl = process.env.WORKER_URL || "https://data4r2.<your-account>.workers.dev";
+  const workerUrl = process.env.WORKER_URL;
   const client = new HFToR2SyncClient(workerUrl);
-
   client.syncRepo(repoId, repoType).then((results) => {
     const ok = results.filter(r => "success" in r.result).length;
     console.log(`\n🎉 Finished syncing ${repoType}: ${repoId}`);
