@@ -1,5 +1,5 @@
 import { listFiles } from "@huggingface/hub";
-import { HuggingFaceToR2Client, TransferResponse } from "./basic-client.ts";
+import { HuggingFaceToR2Client, TransferResponse } from "./basic-clients.ts";
 
 interface BulkResult {
   file: string;
