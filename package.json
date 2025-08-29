@@ -8,10 +8,11 @@
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
 		"sync": "tsx clients/advanced-clients.ts",
-		"synce:squad": "npm run sync -- squad dataset",
+		"sync:squad": "npm run sync -- squad dataset",
 		"sync:bert": "npm run sync -- bert-base-uncased model"
 	},
 	"devDependencies": {
+		"tsx": "^4.20.5",
 		"typescript": "^5.5.2",
 		"wrangler": "^4.33.1"
 	},
