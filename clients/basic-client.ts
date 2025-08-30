@@ -48,6 +48,7 @@ export class HuggingFaceToR2Client {
       // 2. Stream upload to R2 using S3 API
       const upload = new Upload({
         client: this.s3Client,
+        partSize: 100 * 1024 * 1024, // 100 MB chunks
         params: {
           Bucket: this.bucketName,
           Key: r2Path,
