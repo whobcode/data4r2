@@ -1,0 +1,3 @@
+
+> data4r2@0.0.0 dev
+> wrangler dev --log-level debug --show-interactive-dev-session false
