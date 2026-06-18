@@ -1,10 +1,8 @@
-name: Deploy to Cloudflare (manual)
-
-# This repo is a SECONDARY copy that deploys the same Worker as its canonical
-# twin. To avoid two repos auto-deploying the same Worker, this one is
-# manual-trigger only (workflow_dispatch). Gated on CLOUDFLARE_API_TOKEN.
+name: Deploy to Cloudflare
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -21,7 +19,7 @@ jobs:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           if [ -n "$CF_TOKEN" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT";
-          else echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "::notice::CLOUDFLARE_API_TOKEN not set — skipping."; fi
+          else echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "::notice::CLOUDFLARE_API_TOKEN not set - skipping."; fi
       - name: Checkout
         if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@v4
@@ -33,12 +31,8 @@ jobs:
       - name: Install dependencies
         if: steps.gate.outputs.enabled == 'true'
         run: |
-          if [ -f package-lock.json ]; then npm ci || npm install;
-          elif [ -f package.json ]; then npm install; else echo "no package.json"; fi
-      - name: Build (if a build script exists)
-        if: steps.gate.outputs.enabled == 'true'
-        run: |
-          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.build?0:1)"; then npm run build; else echo "no build script"; fi
+          if [ -f package-lock.json ]; then npm ci --legacy-peer-deps || npm install --legacy-peer-deps;
+          elif [ -f package.json ]; then npm install --legacy-peer-deps; else echo "no package.json"; fi
       - name: Deploy to Cloudflare (with retry)
         if: steps.gate.outputs.enabled == 'true'
         env:
@@ -50,4 +44,4 @@ jobs:
             if npx --yes wrangler@latest deploy; then echo "::endgroup::"; echo "ok $attempt"; exit 0; fi
             echo "::endgroup::"; echo "retry in 15s"; sleep 15
           done
-          echo "failed"; exit 1
+          echo "All deploy attempts failed"; exit 1
