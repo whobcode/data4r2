@@ -45,5 +45,8 @@
 			"bucket_name": "data4r2",
 			"binding": "data4r2"
 		}
+	],
+	"rules": [
+		{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
 	]
 }

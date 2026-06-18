@@ -1,97 +1,13 @@
 /**
- * Welcome to Cloudflare Workers!
+ * data4r2 — R2 storage service.
  *
- * This is a template for a Queue consumer: a Worker that can consume from a
- * Queue: https://developers.cloudflare.com/queues/get-started/
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
+ * Original API: POST / { hf_url, r2_path } queues a HuggingFace→R2 transfer
+ * (processed by the queue consumer below). This adds a full web UI at GET /
+ * plus the file-management endpoints the bare API lacked (list/download/
+ * delete/direct-upload), all backed by the R2 binding.
  */
-/*
-export default {
-	// Our fetch handler is invoked on a HTTP request: we can send a message to a queue
-	// during (or after) a request.
-	// https://developers.cloudflare.com/queues/platform/javascript-apis/#producer
-	async fetch(req, env, ctx): Promise<Response> {
-		// To send a message on a queue, we need to create the queue first
-		// https://developers.cloudflare.com/queues/get-started/#3-create-a-queue
-		await env.MY_QUEUE.send({
-			url: req.url,
-			method: req.method,
-			headers: Object.fromEntries(req.headers),
-		});
-		return new Response('Sent message to the queue');
-	},
-	// The queue handler is invoked when a batch of messages is ready to be delivered
-	// https://developers.cloudflare.com/queues/platform/javascript-apis/#messagebatch
-	async queue(batch, env): Promise<void> {
-		// A queue consumer can make requests to other endpoints on the Internet,
-		// write to R2 object storage, query a D1 Database, and much more.
-		for (let message of batch.messages) {
-			// Process each message (we'll just log these)
-			console.log(`message ${message.id} processed: ${JSON.stringify(message.body)}`);
-		}
-	},
-} satisfies ExportedHandler<Env, Error>;
-*/
-// src/index.ts
-/*export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method !== "POST") {
-      return new Response("Method not allowed. Use POST.", { status: 405 });
-    }
 
-    try {
-      const body = await request.json<{ hf_url: string; r2_path: string }>();
-      const { hf_url, r2_path } = body;
-
-      if (!hf_url || !r2_path) {
-        return Response.json({ error: "Missing hf_url or r2_path" }, { status: 400 });
-      }
-
-      if (!hf_url.includes("huggingface.co")) {
-        return Response.json({ error: "Invalid Hugging Face URL" }, { status: 400 });
-      }
-
-      // Fetch from HuggingFace
-      const hfResponse = await fetch(hf_url);
-      if (!hfResponse.ok) {
-        return Response.json(
-          { error: `Failed to fetch from Hugging Face: ${hfResponse.status}` },
-          { status: 400 }
-        );
-      }
-
-      // Stream directly to R2
-      await env.HF_R2_BUCKET.put(r2_path, hfResponse.body, {
-        httpMetadata: {
-          contentType: hfResponse.headers.get("content-type") || "application/octet-stream",
-        },
-      });
-
-      return Response.json({
-        success: true,
-        message: `Transferred ${hf_url} → R2://${r2_path}`,
-        size: hfResponse.headers.get("content-length") || "unknown",
-      });
-    } catch (err) {
-      return Response.json(
-        { error: `Transfer failed: ${err instanceof Error ? err.message : "Unknown error"}` },
-        { status: 500 }
-      );
-    }
-  },
-} satisfies ExportedHandler<Env>;
-*/
-
-
-// src/index.ts
+import UI from "./ui.html";
 
 interface TransferJob {
   hf_url: string;
@@ -100,96 +16,136 @@ interface TransferJob {
   job_id: string;
 }
 
+interface Env {
+  data4r2: R2Bucket;
+  MY_QUEUE: Queue<TransferJob>;
+  WORKER_URL: string;
+}
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+const json = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...CORS },
+  });
+
 export default {
-  // HTTP handler: receives requests and queues transfer jobs
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method !== "POST") {
-      return new Response("Method not allowed. Use POST.", { status: 405 });
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+
+    if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+
+    // --- Web UI ---
+    if (method === "GET" && (path === "/" || path === "/index.html")) {
+      return new Response(UI, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
-    try {
-      const body = await request.json<{ hf_url: string; r2_path: string }>();
-      const { hf_url, r2_path } = body;
-
-      if (!hf_url || !r2_path) {
-        return Response.json({ error: "Missing hf_url or r2_path" }, { status: 400 });
-      }
-
-      if (!hf_url.includes("huggingface.co")) {
-        return Response.json({ error: "Invalid Hugging Face URL" }, { status: 400 });
-      }
-
-      // Create transfer job
-      const job: TransferJob = {
-        hf_url,
-        r2_path,
-        timestamp: Date.now(),
-        job_id: crypto.randomUUID(),
-      };
-
-      // Send to queue for async processing
-      await env.MY_QUEUE.send(job);
-
-      return Response.json({
-        success: true,
-        message: `Transfer job queued: ${hf_url} → R2://${r2_path}`,
-        job_id: job.job_id,
-        status: "queued"
+    // --- List objects ---
+    if (method === "GET" && path === "/api/files") {
+      const prefix = url.searchParams.get("prefix") || undefined;
+      const cursor = url.searchParams.get("cursor") || undefined;
+      const listed = await env.data4r2.list({ limit: 1000, prefix, cursor, include: ["httpMetadata", "customMetadata"] });
+      return json({
+        objects: listed.objects.map((o) => ({
+          key: o.key,
+          size: o.size,
+          uploaded: o.uploaded,
+          etag: o.httpEtag,
+          contentType: o.httpMetadata?.contentType,
+          source: o.customMetadata?.source_url,
+        })),
+        truncated: listed.truncated,
+        cursor: listed.truncated ? (listed as { cursor?: string }).cursor : undefined,
       });
-
-    } catch (err) {
-      return Response.json(
-        { error: `Failed to queue job: ${err instanceof Error ? err.message : "Unknown error"}` },
-        { status: 500 }
-      );
     }
+
+    // --- Download / stream an object ---
+    if (method === "GET" && path === "/api/file") {
+      const key = url.searchParams.get("key");
+      if (!key) return json({ error: "key is required" }, 400);
+      const obj = await env.data4r2.get(key);
+      if (!obj) return json({ error: "Not found" }, 404);
+      const h = new Headers(CORS);
+      obj.writeHttpMetadata(h);
+      h.set("etag", obj.httpEtag);
+      if (url.searchParams.get("download")) {
+        h.set("Content-Disposition", `attachment; filename="${(key.split("/").pop() || key).replace(/"/g, "")}"`);
+      }
+      return new Response(obj.body, { headers: h });
+    }
+
+    // --- Delete an object ---
+    if (method === "DELETE" && path === "/api/file") {
+      const key = url.searchParams.get("key");
+      if (!key) return json({ error: "key is required" }, 400);
+      await env.data4r2.delete(key);
+      return json({ success: true, deleted: key });
+    }
+
+    // --- Direct upload (multipart form or raw PUT) ---
+    if (method === "POST" && path === "/api/upload") {
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) return json({ error: "file field is required" }, 400);
+      const key = String(form.get("key") || file.name);
+      await env.data4r2.put(key, file.stream(), {
+        httpMetadata: { contentType: file.type || "application/octet-stream" },
+        customMetadata: { uploaded_via: "ui", processed_at: new Date().toISOString() },
+      });
+      return json({ success: true, key, size: file.size });
+    }
+    if (method === "PUT" && path === "/api/upload") {
+      const key = url.searchParams.get("key");
+      if (!key) return json({ error: "key is required" }, 400);
+      await env.data4r2.put(key, request.body, {
+        httpMetadata: { contentType: request.headers.get("content-type") || "application/octet-stream" },
+      });
+      return json({ success: true, key });
+    }
+
+    // --- HuggingFace → R2 transfer (original API; POST / kept for back-compat) ---
+    if (method === "POST" && (path === "/" || path === "/api/transfer")) {
+      try {
+        const body = (await request.json()) as { hf_url?: string; r2_path?: string };
+        const { hf_url, r2_path } = body;
+        if (!hf_url || !r2_path) return json({ error: "Missing hf_url or r2_path" }, 400);
+        if (!hf_url.includes("huggingface.co")) return json({ error: "Invalid Hugging Face URL" }, 400);
+        const job: TransferJob = { hf_url, r2_path, timestamp: Date.now(), job_id: crypto.randomUUID() };
+        await env.MY_QUEUE.send(job);
+        return json({ success: true, message: `Transfer job queued: ${hf_url} → R2://${r2_path}`, job_id: job.job_id, status: "queued" });
+      } catch (err) {
+        return json({ error: `Failed to queue job: ${err instanceof Error ? err.message : "Unknown error"}` }, 500);
+      }
+    }
+
+    return json({ error: "Not found" }, 404);
   },
 
-  // Queue consumer: processes transfer jobs
+  // Queue consumer: streams HuggingFace files into R2.
   async queue(batch: MessageBatch<TransferJob>, env: Env): Promise<void> {
     for (const message of batch.messages) {
       const job = message.body;
-      
       try {
-        console.log(`Processing transfer job ${job.job_id}: ${job.hf_url}`);
-
-        // Fetch from HuggingFace
         const hfResponse = await fetch(job.hf_url);
         if (!hfResponse.ok) {
-          console.error(` Job ${job.job_id} failed: HF returned ${hfResponse.status}`);
-          message.retry(); // Retry the job
+          message.retry();
           continue;
         }
-
-        // Stream directly to R2 (using your bucket binding)
         await env.data4r2.put(job.r2_path, hfResponse.body, {
-          httpMetadata: {
-            contentType: hfResponse.headers.get("content-type") || "application/octet-stream",
-          },
-          customMetadata: {
-            job_id: job.job_id,
-            source_url: job.hf_url,
-            processed_at: new Date().toISOString(),
-          }
+          httpMetadata: { contentType: hfResponse.headers.get("content-type") || "application/octet-stream" },
+          customMetadata: { job_id: job.job_id, source_url: job.hf_url, processed_at: new Date().toISOString() },
         });
-
-        console.log(` Job ${job.job_id} completed: ${job.r2_path} (${hfResponse.headers.get("content-length") || "unknown"} bytes)`);
-        
-        // Acknowledge successful processing
         message.ack();
-
       } catch (error) {
-        console.error(` Job ${job.job_id} error:`, error);
-        
-        // Retry logic: retry up to 3 times, then give up
-        if (message.attempts < 3) {
-          message.retry();
-        } else {
-          console.error(`Job ${job.job_id} failed permanently after 3 attempts`);
-          message.ack(); // Remove from queue to prevent infinite retries
-        }
+        if (message.attempts < 3) message.retry();
+        else message.ack();
       }
     }
   },
-
 } satisfies ExportedHandler<Env>;
